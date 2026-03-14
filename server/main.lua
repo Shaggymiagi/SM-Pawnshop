@@ -188,7 +188,7 @@ RegisterNetEvent('pawnshop:sellItemConfirm', function(itemName, amount, shopId)
         TriggerClientEvent('pawnshop:notify', src, "You don't have enough of this item", 'error')
         return
     end
-    if not Config.Shops[shopId] then
+    if not Config.Pawnshops[shopId] then
         return
     end
     local basePrice = itemData.price * amount
