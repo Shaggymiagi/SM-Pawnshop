@@ -161,36 +161,54 @@ RegisterNetEvent('pawnshop:sellItem', function(data)
     TriggerClientEvent('pawnshop:openAmountInput', src, data.item, data.shopId)
 end)
 
+local sellCooldown = {}
+
 RegisterNetEvent('pawnshop:sellItemConfirm', function(itemName, amount, shopId)
     local src = source
     local Player = QBCore.Functions.GetPlayer(src)
     if not Player then return end
-    
+    if sellCooldown[src] and sellCooldown[src] > os.time() then
+        return
+    end
+    sellCooldown[src] = os.time() + 2
+    if type(itemName) ~= "string" then return end
+    if type(amount) ~= "number" then return end
+    if type(shopId) ~= "number" then return end
+    amount = math.floor(amount)
+    if amount <= 0 or amount > 100 then
+        return
+    end
+
     local itemData = Config.Items[itemName]
-    if not itemData then return end
-    
+    if not itemData then
+        return
+    end
     local item = Player.Functions.GetItemByName(itemName)
     if not item or item.amount < amount then
         TriggerClientEvent('pawnshop:notify', src, "You don't have enough of this item", 'error')
         return
     end
-    
-    -- Calculate prices
+    if not Config.Shops[shopId] then
+        return
+    end
     local basePrice = itemData.price * amount
+    if basePrice <= 0 or basePrice > 1000000 then
+        return
+    end
+
     local playerCut = math.floor(basePrice * (100 - Config.OwnerCutPercentage) / 100)
     local ownerCut = basePrice - playerCut
-    
-    -- Remove item from player
     if Player.Functions.RemoveItem(itemName, amount) then
-        -- Give money to player
+
         Player.Functions.AddMoney('cash', playerCut, "pawnshop-sale")
+
         TriggerClientEvent('inventory:client:ItemBox', src, QBCore.Shared.Items[itemName], "remove", amount)
         TriggerClientEvent('pawnshop:notify', src, string.format(Config.Locales['item_sold'], amount, itemData.label, playerCut), 'success')
-        
-        -- Add profit to shop owner
-        MySQL.Async.fetchAll('SELECT * FROM pawnshop_owned WHERE shop_id = ?', {shopId}, function(result)
-            if result[1] then
+
+        MySQL.Async.fetchAll('SELECT profit FROM pawnshop_owned WHERE shop_id = ?', {shopId}, function(result)
+            if result and result[1] then
                 local newProfit = result[1].profit + ownerCut
+
                 if newProfit <= Config.MaxProfit then
                     MySQL.Async.execute('UPDATE pawnshop_owned SET profit = ? WHERE shop_id = ?', {
                         newProfit,
@@ -200,4 +218,8 @@ RegisterNetEvent('pawnshop:sellItemConfirm', function(itemName, amount, shopId)
             end
         end)
     end
+end)
+
+AddEventHandler('playerDropped', function()
+    sellCooldown[source] = nil
 end)
